@@ -47,15 +47,17 @@
             <!-- Workout Panel -->
             <aside class="workout-panel">
                 <div class="workout-panel-header">
-                    <h2>Моя тренировка сегодня</h2>
+                    <div class="workout-panel-header-top">
+                        <h2>Моя тренировка сегодня</h2>
+                        <button class="workout-panel-toggle" id="workout-panel-toggle" type="button" aria-expanded="true">
+                            Свернуть панель
+                        </button>
+                    </div>
                     <div class="workout-stats">
                         <span>📊 Упражнений: <strong id="exercise-count">0</strong></span>
                         <span>⏱️ Время: <strong id="workout-duration">0</strong> мин</span>
                     </div>
                     <div class="muscle-balance" id="muscle-balance"></div>
-                    <button class="workout-panel-toggle" id="workout-panel-toggle" type="button" aria-expanded="true">
-                        Свернуть панель
-                    </button>
                 </div>
                 <div class="workout-panel-body" id="workout-panel-body">
                     <div class="workout-meta">

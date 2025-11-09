@@ -537,7 +537,7 @@ body {
     max-height: 70vh;
     overflow-y: auto;
     padding-bottom: calc(var(--space-16) + env(safe-area-inset-bottom, 0));
-    transition: transform var(--duration-normal) var(--ease-standard), box-shadow var(--duration-normal) var(--ease-standard);
+    transition: box-shadow var(--duration-normal) var(--ease-standard);
 }
 
 @media (min-width: 768px) {
@@ -560,11 +560,9 @@ body {
 }
 
 .workout-panel-toggle {
-    margin-top: var(--space-12);
-    width: 100%;
-    border-radius: var(--radius-base);
+    border-radius: var(--radius-full);
     border: none;
-    padding: var(--space-10) var(--space-12);
+    padding: var(--space-8) var(--space-16);
     background: var(--color-secondary);
     color: var(--color-text);
     font-weight: var(--font-weight-medium);
@@ -588,16 +586,21 @@ body {
         justify-content: center;
     }
 
+    .workout-panel-body {
+        transition: opacity var(--duration-normal) var(--ease-standard),
+            max-height var(--duration-normal) var(--ease-standard);
+        max-height: 2000px;
+        overflow: hidden;
+    }
+
     .workout-panel--collapsed {
-        transform: translateY(calc(100% - 72px));
         box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.08);
     }
 
     .workout-panel--collapsed .workout-panel-body {
         opacity: 0;
-        visibility: hidden;
         pointer-events: none;
-        height: 0;
+        max-height: 0;
     }
 }
 
@@ -608,6 +611,16 @@ body {
     top: 0;
     background: var(--color-surface);
     z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-12);
+}
+
+.workout-panel-header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-12);
 }
 
 .workout-meta {
