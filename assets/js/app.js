@@ -163,7 +163,8 @@
             history: 'fullbodyWorkoutHistory_v1',
             currentWorkout: 'fullbodyCurrentWorkout_v1',
             meta: 'fullbodyWorkoutMeta_v1',
-            customExercises: 'fullbodyCustomExercises_v1'
+            customExercises: 'fullbodyCustomExercises_v1',
+            remoteConfig: 'fullbodyRemoteSync_v1'
         };
         const isStorageAvailable = typeof window !== 'undefined' && 'localStorage' in window;
 
@@ -179,6 +180,16 @@
         let sessionWorkoutId = null;
         let isWorkoutPanelCollapsed = false;
         let currentTab = 'exercises';
+        let remoteSyncConfig = {
+            owner: '',
+            repo: '',
+            branch: 'main',
+            filePath: 'data/workouts.json',
+            token: '',
+            lastSha: '',
+            lastSyncedAt: null
+        };
+        let isSyncInProgress = false;
 
         // DOM Elements
         const muscleGroupsContainer = document.getElementById('muscle-groups');
@@ -212,6 +223,19 @@
         const workoutPanelBody = document.getElementById('workout-panel-body');
         const workoutPanelToggle = document.getElementById('workout-panel-toggle');
         const mobileMediaQuery = window.matchMedia('(max-width: 767px)');
+        const syncSettingsBtn = document.getElementById('sync-settings-btn');
+        const syncModal = document.getElementById('sync-modal');
+        const syncModalClose = document.getElementById('sync-modal-close');
+        const syncModalCancel = document.getElementById('sync-modal-cancel');
+        const syncForm = document.getElementById('sync-form');
+        const syncOwnerInput = document.getElementById('sync-owner');
+        const syncRepoInput = document.getElementById('sync-repo');
+        const syncBranchInput = document.getElementById('sync-branch');
+        const syncPathInput = document.getElementById('sync-path');
+        const syncTokenInput = document.getElementById('sync-token');
+        const syncStatus = document.getElementById('sync-status');
+        const syncPullBtn = document.getElementById('sync-pull-btn');
+        const syncPushBtn = document.getElementById('sync-push-btn');
 
         // Initialize App
         function init() {
@@ -223,11 +247,21 @@
             updateWorkoutDisplay();
             syncWorkoutMetaInputs();
             renderHistory();
+            setWorkoutPanelCollapsed(false);
             if (mobileMediaQuery) {
-                setWorkoutPanelCollapsed(isMobileView());
                 mobileMediaQuery.addEventListener('change', handleViewportChange);
-            } else {
-                setWorkoutPanelCollapsed(false);
+            }
+        }
+
+        function persistRemoteConfig() {
+            if (!isStorageAvailable) {
+                return;
+            }
+            const { token, ...rest } = remoteSyncConfig;
+            try {
+                localStorage.setItem(STORAGE_KEYS.remoteConfig, JSON.stringify(rest));
+            } catch (error) {
+                console.warn('Не удалось сохранить настройки синхронизации', error);
             }
         }
 
@@ -240,6 +274,7 @@
                 const storedWorkout = localStorage.getItem(STORAGE_KEYS.currentWorkout);
                 const storedMeta = localStorage.getItem(STORAGE_KEYS.meta);
                 const storedCustomExercises = localStorage.getItem(STORAGE_KEYS.customExercises);
+                const storedRemoteConfig = localStorage.getItem(STORAGE_KEYS.remoteConfig);
 
                 if (storedHistory) {
                     workoutHistory = JSON.parse(storedHistory).map(workout => ({
@@ -265,6 +300,14 @@
                 if (storedCustomExercises) {
                     const parsedCustom = JSON.parse(storedCustomExercises);
                     customExercises = Array.isArray(parsedCustom) ? parsedCustom : [];
+                }
+
+                if (storedRemoteConfig) {
+                    const parsedConfig = JSON.parse(storedRemoteConfig);
+                    remoteSyncConfig = {
+                        ...remoteSyncConfig,
+                        ...parsedConfig
+                    };
                 }
             } catch (error) {
                 console.warn('Не удалось загрузить сохраненные тренировки', error);
@@ -329,6 +372,14 @@
             if (workoutNotesInput) {
                 workoutNotesInput.value = workoutMeta.notes || '';
             }
+            if (syncOwnerInput) syncOwnerInput.value = remoteSyncConfig.owner || '';
+            if (syncRepoInput) syncRepoInput.value = remoteSyncConfig.repo || '';
+            if (syncBranchInput) syncBranchInput.value = remoteSyncConfig.branch || 'main';
+            if (syncPathInput) syncPathInput.value = remoteSyncConfig.filePath || 'data/workouts.json';
+            if (syncTokenInput && remoteSyncConfig.token) {
+                syncTokenInput.value = remoteSyncConfig.token;
+            }
+            renderSyncStatus();
         }
 
         function resetWorkoutMeta() {
@@ -370,9 +421,175 @@
 
         function handleViewportChange(event) {
             if (event.matches) {
-                setWorkoutPanelCollapsed(true);
+                setWorkoutPanelCollapsed(isWorkoutPanelCollapsed);
             } else {
                 setWorkoutPanelCollapsed(false);
+            }
+        }
+
+        function renderSyncStatus(message = '') {
+            if (!syncStatus) return;
+            if (message) {
+                syncStatus.textContent = message;
+                return;
+            }
+            if (remoteSyncConfig.lastSyncedAt) {
+                syncStatus.textContent = `Последняя синхронизация: ${new Date(remoteSyncConfig.lastSyncedAt).toLocaleString('ru-RU')}`;
+            } else {
+                syncStatus.textContent = 'Удалённая синхронизация пока не настроена.';
+            }
+        }
+
+        function validateSyncConfig() {
+            const requiredFields = ['owner', 'repo', 'filePath'];
+            for (const field of requiredFields) {
+                if (!remoteSyncConfig[field]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function setSyncLoading(isLoading) {
+            isSyncInProgress = isLoading;
+            if (syncPullBtn) syncPullBtn.disabled = isLoading;
+            if (syncPushBtn) syncPushBtn.disabled = isLoading;
+        }
+
+        function openSyncModal() {
+            if (!syncModal) return;
+            syncModal.classList.add('open');
+            syncModal.setAttribute('aria-hidden', 'false');
+            syncOwnerInput?.focus();
+        }
+
+        function closeSyncModal() {
+            if (!syncModal) return;
+            syncModal.classList.remove('open');
+            syncModal.setAttribute('aria-hidden', 'true');
+        }
+
+        async function pullRemoteData() {
+            if (isSyncInProgress) return;
+            const branch = remoteSyncConfig.branch || 'main';
+            if (!validateSyncConfig()) {
+                showToast('Заполни owner/repo/путь для синхронизации', 'error');
+                return;
+            }
+            setSyncLoading(true);
+            renderSyncStatus('Загружаю данные из GitHub…');
+            try {
+                const response = await fetch(`https://api.github.com/repos/${remoteSyncConfig.owner}/${remoteSyncConfig.repo}/contents/${remoteSyncConfig.filePath}?ref=${encodeURIComponent(branch)}`, {
+                    headers: remoteSyncConfig.token ? {
+                        Authorization: `Bearer ${remoteSyncConfig.token}`,
+                        Accept: 'application/vnd.github+json'
+                    } : {
+                        Accept: 'application/vnd.github+json'
+                    }
+                });
+                if (!response.ok) {
+                    throw new Error(`GitHub API: ${response.status}`);
+                }
+                const payload = await response.json();
+                const decoded = base64ToString(payload.content);
+                const parsed = JSON.parse(decoded);
+                if (Array.isArray(parsed.workoutHistory)) {
+                    workoutHistory = parsed.workoutHistory.map(workout => ({
+                        ...workout,
+                        completedExerciseIds: Array.isArray(workout.completedExerciseIds)
+                            ? workout.completedExerciseIds
+                            : []
+                    }));
+                }
+                if (Array.isArray(parsed.customExercises)) {
+                    customExercises = parsed.customExercises;
+                }
+                if (parsed.workoutMeta) {
+                    workoutMeta = {
+                        ...workoutMeta,
+                        ...parsed.workoutMeta
+                    };
+                }
+                if (Array.isArray(parsed.currentWorkout)) {
+                    currentWorkout = parsed.currentWorkout;
+                } else {
+                    currentWorkout = [];
+                }
+                remoteSyncConfig.lastSha = payload.sha;
+                remoteSyncConfig.lastSyncedAt = Date.now();
+                persistHistoryState();
+                persistCustomExercises();
+                persistWorkoutMetaState();
+                persistCurrentWorkoutState();
+                persistRemoteConfig();
+                renderMuscleGroups(searchInput ? searchInput.value : '');
+                renderHistory();
+                updateWorkoutDisplay();
+                syncWorkoutMetaInputs();
+                renderSyncStatus();
+                showToast('Данные загружены с GitHub', 'success');
+            } catch (error) {
+                console.error(error);
+                renderSyncStatus('Ошибка синхронизации. Проверь токен и настройки.');
+                showToast('Не получилось загрузить из GitHub', 'error');
+            } finally {
+                setSyncLoading(false);
+            }
+        }
+
+        async function pushRemoteData() {
+            if (isSyncInProgress) return;
+            const branch = remoteSyncConfig.branch || 'main';
+            if (!validateSyncConfig()) {
+                showToast('Заполни owner/repo/путь для синхронизации', 'error');
+                return;
+            }
+            if (!remoteSyncConfig.token) {
+                showToast('Для записи нужен GitHub token', 'error');
+                return;
+            }
+            setSyncLoading(true);
+            renderSyncStatus('Отправляю данные в GitHub…');
+            try {
+                const payload = {
+                    workoutHistory,
+                    customExercises,
+                    workoutMeta,
+                    currentWorkout,
+                    syncedAt: new Date().toISOString()
+                };
+                const encoded = stringToBase64(JSON.stringify(payload, null, 2));
+                const body = {
+                    message: 'Update workout data',
+                    content: encoded,
+                    branch
+                };
+                if (remoteSyncConfig.lastSha) {
+                    body.sha = remoteSyncConfig.lastSha;
+                }
+                const response = await fetch(`https://api.github.com/repos/${remoteSyncConfig.owner}/${remoteSyncConfig.repo}/contents/${remoteSyncConfig.filePath}`, {
+                    method: 'PUT',
+                    headers: {
+                        Authorization: `Bearer ${remoteSyncConfig.token}`,
+                        Accept: 'application/vnd.github+json'
+                    },
+                    body: JSON.stringify(body)
+                });
+                if (!response.ok) {
+                    throw new Error(`GitHub API: ${response.status}`);
+                }
+                const result = await response.json();
+                remoteSyncConfig.lastSha = result.content?.sha || remoteSyncConfig.lastSha;
+                remoteSyncConfig.lastSyncedAt = Date.now();
+                persistRemoteConfig();
+                renderSyncStatus();
+                showToast('Данные выгружены в GitHub', 'success');
+            } catch (error) {
+                console.error(error);
+                renderSyncStatus('Ошибка отправки. Проверь настройки.');
+                showToast('Не получилось выгрузить в GitHub', 'error');
+            } finally {
+                setSyncLoading(false);
             }
         }
 
@@ -797,6 +1014,28 @@
             return escapeHtml(notes).replace(/\n/g, '<br>');
         }
 
+        function base64ToString(base64) {
+            const cleaned = base64.replace(/\s/g, '');
+            if (typeof TextDecoder !== 'undefined') {
+                const binary = atob(cleaned);
+                const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+                return new TextDecoder().decode(bytes);
+            }
+            return decodeURIComponent(escape(atob(cleaned)));
+        }
+
+        function stringToBase64(str) {
+            if (typeof TextEncoder !== 'undefined') {
+                const bytes = new TextEncoder().encode(str);
+                let binary = '';
+                bytes.forEach(byte => {
+                    binary += String.fromCharCode(byte);
+                });
+                return btoa(binary);
+            }
+            return btoa(unescape(encodeURIComponent(str)));
+        }
+
         // Render History
         function renderHistory() {
             if (workoutHistory.length === 0) {
@@ -989,7 +1228,9 @@
             // Nav tabs
             document.querySelectorAll('.nav-tab').forEach(tab => {
                 tab.addEventListener('click', () => {
-                    switchTab(tab.dataset.tab);
+                    if (tab.dataset.tab) {
+                        switchTab(tab.dataset.tab);
+                    }
                 });
             });
 
@@ -1043,6 +1284,11 @@
                 exerciseModalOverlay.addEventListener('click', closeExerciseModal);
             }
 
+            const syncModalOverlay = syncModal?.querySelector('[data-close-sync-modal]');
+            if (syncModalOverlay) {
+                syncModalOverlay.addEventListener('click', closeSyncModal);
+            }
+
             if (exerciseForm) {
                 exerciseForm.addEventListener('submit', handleExerciseFormSubmit);
             }
@@ -1075,12 +1321,55 @@
                         closeExerciseModal();
                     } else if (sessionView?.classList.contains('open')) {
                         closeWorkoutSession();
+                    } else if (syncModal?.classList.contains('open')) {
+                        closeSyncModal();
                     }
                 }
             });
 
             if (workoutPanelToggle) {
                 workoutPanelToggle.addEventListener('click', toggleWorkoutPanel);
+            }
+
+            if (syncSettingsBtn) {
+                syncSettingsBtn.addEventListener('click', openSyncModal);
+            }
+
+            if (syncModalClose) {
+                syncModalClose.addEventListener('click', closeSyncModal);
+            }
+
+            if (syncModalCancel) {
+                syncModalCancel.addEventListener('click', closeSyncModal);
+            }
+
+            if (syncForm) {
+                syncForm.addEventListener('submit', (event) => {
+                    event.preventDefault();
+                    if (!syncForm.checkValidity()) {
+                        syncForm.reportValidity();
+                        return;
+                    }
+                    remoteSyncConfig.owner = syncOwnerInput?.value.trim() || '';
+                    remoteSyncConfig.repo = syncRepoInput?.value.trim() || '';
+                    remoteSyncConfig.branch = syncBranchInput?.value.trim() || 'main';
+                    remoteSyncConfig.filePath = syncPathInput?.value.trim() || 'data/workouts.json';
+                    if (syncTokenInput) {
+                        remoteSyncConfig.token = syncTokenInput.value.trim();
+                    }
+                    persistRemoteConfig();
+                    renderSyncStatus('Настройки сохранены.');
+                    showToast('Настройки синхронизации сохранены', 'success');
+                    setTimeout(() => renderSyncStatus(), 2500);
+                });
+            }
+
+            if (syncPullBtn) {
+                syncPullBtn.addEventListener('click', pullRemoteData);
+            }
+
+            if (syncPushBtn) {
+                syncPushBtn.addEventListener('click', pushRemoteData);
             }
         }
 

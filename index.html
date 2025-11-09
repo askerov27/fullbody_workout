@@ -17,6 +17,7 @@
                 <button class="nav-tab" data-tab="templates">Шаблоны</button>
                 <button class="nav-tab" data-tab="history">История</button>
             </div>
+            <button class="header-sync-btn" type="button" id="sync-settings-btn">☁️ Синхронизация</button>
         </header>
 
         <main class="app-main">
@@ -118,6 +119,50 @@
                 <button class="session-view__close" id="session-view-close" aria-label="Закрыть">&times;</button>
             </div>
             <div class="session-view__body" id="session-view-exercises"></div>
+        </div>
+    </div>
+
+    <div class="modal" id="sync-modal" aria-hidden="true">
+        <div class="modal__overlay" data-close-sync-modal></div>
+        <div class="modal__content">
+            <div class="modal__header">
+                <h3>Синхронизация через GitHub</h3>
+                <button class="modal__close" id="sync-modal-close" aria-label="Закрыть">&times;</button>
+            </div>
+            <form id="sync-form" class="modal__body">
+                <p class="modal__hint">
+                    Используй GitHub Personal Access Token с правами <code>repo</code>, чтобы читать и писать JSON-файл в репозитории.
+                </p>
+                <div class="modal__field">
+                    <label for="sync-owner">Владелец (user или org)</label>
+                    <input type="text" id="sync-owner" class="workout-meta-input" placeholder="username" required>
+                </div>
+                <div class="modal__field">
+                    <label for="sync-repo">Репозиторий</label>
+                    <input type="text" id="sync-repo" class="workout-meta-input" placeholder="awesome-workouts" required>
+                </div>
+                <div class="modal__field">
+                    <label for="sync-branch">Ветка</label>
+                    <input type="text" id="sync-branch" class="workout-meta-input" placeholder="main">
+                </div>
+                <div class="modal__field">
+                    <label for="sync-path">Путь к файлу</label>
+                    <input type="text" id="sync-path" class="workout-meta-input" placeholder="data/workouts.json">
+                </div>
+                <div class="modal__field">
+                    <label for="sync-token">GitHub Token (хранится локально)</label>
+                    <input type="password" id="sync-token" class="workout-meta-input" placeholder="ghp_xxx">
+                </div>
+                <div class="modal__actions">
+                    <button type="submit" class="btn btn--secondary">Сохранить настройки</button>
+                    <button type="button" class="btn btn--secondary" id="sync-modal-cancel">Закрыть</button>
+                </div>
+            </form>
+            <div class="sync-status" id="sync-status"></div>
+            <div class="sync-actions">
+                <button class="btn btn--secondary" id="sync-pull-btn">⬇️ Загрузить</button>
+                <button class="btn btn--primary" id="sync-push-btn">⬆️ Выгрузить</button>
+            </div>
         </div>
     </div>
 
